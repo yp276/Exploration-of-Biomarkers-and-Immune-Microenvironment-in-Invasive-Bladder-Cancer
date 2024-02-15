@@ -1,0 +1,173 @@
+---
+title: "YukthaPenumala-Team3-Step1"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-11-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set Working Directory
+```{r}
+setwd("C:/Users/ypenu/OneDrive/Documents/HIDS_7003/Final Project/Step 1")
+```
+
+## Step 0 - Check processed data 
+
+## Step 1 - Read in data
+```{r}
+clinData <- read.table(file = "input/20191105_BC_ClinData_233rows.csv",
+                       sep=",", 
+                       header = T, 
+                       stringsAsFactors = F, row.names = NULL)
+```
+
+```{r}
+geneExp <- read.csv(file = "input/20191105_BC_GeneExpData_withAnno_233.tsv",
+                      sep="\t",
+                      row.names = 1,
+                      stringsAsFactors = F)
+```
+
+## Step 2 - Filter data 
+
+# Filter clinical data (not needed)
+- Columns are samples/patients
+- Rows are clinical attributes
+```{r}
+dim(clinData)
+```
+
+# Filter gene expression data (not needed)
+- Columns are samples/patients
+- Rows are molecular features (gene expression)
+```{r}
+dim(geneExp)
+```
+
+```{r}
+matchingSamples <- which(colnames(geneExp) %in% clinData$GSMid) # 233 IDs matching
+subsetGeneExp <- geneExp[, matchingSamples] ##  43148 rows features, 233 patient columns
+```
+
+## Step 3 - Identify the groups to be compared (Baseline and Comparision Groups)
+
+```{r}
+baselineGrpLabels <-  which(clinData$PrimaryBladderCancerType == "Normal bladder mucosae") #10 samples
+head(baselineGrpLabels)
+# Labels (row numbers) that can identify the baseline group patients
+# Use the labels (row numbers) to subset baseline patients in clinical data file 
+clinBase <- clinData[baselineGrpLabels, ]
+
+# Labels (row numbers) that can identify the comp group patients
+compGrpLabels <- which(clinData$PrimaryBladderCancerType == "Primary_BC_Invasive") #62 samples
+head(compGrpLabels)
+# Use the labels (row numbers) to subset comp patients in clinical data file 
+clinComp <- clinData[compGrpLabels, ]
+
+#### Use the clinBase and clinComp objects to subset gene expression data
+geneExpTumorBase <- subsetGeneExp[, clinBase$GSMid] # 43148 feature (rows), 10 samples columns
+geneExpTumorComp <- subsetGeneExp[, clinComp$GSMid] # 43148 feature (rows), 62 samples columns
+```
+
+## Step 4: Sanity check
+
+```{r}
+#See if sample ids in clinical data match sample ids in gene exp data
+clinBase$GSMid == colnames(geneExpTumorBase)
+clinComp$GSMid == colnames(geneExpTumorComp)
+```
+
+```{r}
+# a) A tsv file that contains exported patient ids from clinical data (baseline and comparison groups)
+write.table(clinBase$SUBJECT_ID , file = "output/YukthaPenumala_ClinBaseIDs.tsv", sep="\t", quote = F)
+write.table(clinComp$SUBJECT_ID , file = "output/YukthaPenumala_ClinCompIDs.tsv", sep="\t", quote = F)
+
+# b) A tsv file that contains exported patient ids from gene exp data (baseline and comparison groups)
+write.table(colnames(geneExpTumorBase) , 
+            file = "output/YukthaPenumala_GeneExpBaseIDs.tsv", 
+            sep="\t", quote = F )
+write.table(colnames(geneExpTumorComp) , 
+            file = "output/YukthaPenumala_GeneExpCompIDs.tsv", 
+            sep="\t", quote = F)
+
+# c) Excel file that contains comparison on patient ids from clinical and gene exp data (baseline and comparison groups)
+# Refer to file w/ name: "YukthaPenumala_Checking.xlx"
+
+# d) A tsv file that contains exported feature names
+     # This file contains only probe/gene names and no other garbage
+write.table(rownames(geneExp), file = "output/YukthaPenumala_FeatureIDs.tsv", sep="\t", quote = F)
+```
+
+## Step 5 - Prep data for T-test
+
+```{r}
+### Checking to make sure data is a numeric data frame
+knitr::kable(head(geneExpTumorBase[1:5,1:4]))
+knitr::kable(head(geneExpTumorComp[1:5,1:4]))
+```
+
+#### Function for T-test
+
+```{r ttest}
+source("fnTTest.R")
+
+#### Call T-test function
+results1 = fnTTest(baseGroup = geneExpTumorBase, 
+                   compGroup = geneExpTumorComp, 
+                   testName = "TTest", 
+                   baseGroupName = "Normal",
+                   compGroupName =  "Invasive",
+                   folderName = "output")
+```
+
+# Read in the T-Test results file
+```{r}
+#Read in the T-Test results file
+ttestResults <- read.csv(file = "output/TTest_Invasive_(Comp).vs._Normal_(Base).TTest.csv")
+```
+
+## Step 6 - Filtering to obtain top DEGs
+```{r}
+#check to make sure p-value column is imported as numeric 
+#sort by p-value (just in case the results are not sorted by p-value)
+ttestResultsSorted <- dplyr::arrange(ttestResults, Pvalue)
+
+#Find rows based on cut-off criteria 
+whichSig <- which(ttestResultsSorted$FDR <= 0.0001 & ttestResultsSorted$SignedFC <= 1.5)
+
+#Short list sig results
+ttestResultsSig <- ttestResultsSorted[whichSig, ] #735 rows 
+
+colnames(ttestResultsSig) # check column names of gene list
+
+write.csv(x=ttestResultsSig, file = "output/YukthaPenumala-Invasive-Normal-DEGs-before.csv", quote=F,  row.names=FALSE)
+
+# Split gene annotations to include only gene names. 
+geneBefore <- ttestResultsSig$Feature
+split_names <- strsplit(geneBefore, "\\|")
+geneName <- sapply(split_names, function(x) x[2])
+ttestResultsSig$Feature <- geneName
+head(ttestResultsSig) # Changed gene annotations to include only gene names
+
+### Export short listed results
+write.csv(x=ttestResultsSig, file="output/YukthaPenumala_Invasive_Ttest_Shortlisted.csv", quote=F,row.names=FALSE)
+
+# Remove any NA values as they indicate candidate genes 
+ttestResultsSig2 <- na.omit(ttestResultsSig) 
+
+length(ttestResultsSig2$Feature) #639 DEGs after removing NA values 
+
+duplicated(ttestResultsSig2$Feature) # 6 duplicates 
+
+# Remove 6 duplicates (keeping first occurence)
+ttestResultsSig3 <- ttestResultsSig2[!duplicated(ttestResultsSig2$Feature), ]
+
+length(ttestResultsSig3$Feature) #633 DEGs after removing NA values
+
+### Export final short listed results
+write.csv(x=ttestResultsSig3, file="output/YukthaPenumala_Invasive_Ttest_FinalShortlisted.csv", quote=F,row.names=FALSE)
+```

@@ -1,0 +1,55 @@
+---
+title: "YukthaPenumala-Team3-Step2"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-11-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(enrichR)
+library(openxlsx)
+```
+
+## Set Working Directory
+```{r}
+setwd("C:/Users/ypenu/OneDrive/Documents/HIDS_7003/Final Project/Step 2")
+```
+
+## Import T-test results so that we can short list further
+```{r}
+#folder that contains group comparison results
+fileName <- "input/YukthaPenumala_Invasive_Ttest_FinalShortlisted.csv"
+
+# Read in group comparison results
+result1 <- read.csv(file = fileName, 
+                        header = T, stringsAsFactors = F, row.names = NULL)
+# Only gene names
+
+geneListFinal <- result1$Feature
+```
+
+## Load Databases for Enrichr R package , and check connection
+```{r}
+#checking if EnrichR website and packing are working
+dbs <- enrichR::listEnrichrDbs()  #total number of databases available = 200+ 
+
+#List of databases for which enrichment analysis will be run
+dblist1 <- read.csv(file = "input/2023-EnrichR-Databases.txt", header = F, stringsAsFactors = F)
+
+head(dblist1)
+```
+
+## Call function to run Enrichment
+
+```{r}
+# set output file name
+outputFileName1 <- paste("output/YukthaPenumala-Team3-Step2-EnrichR.xlsx", sep="")
+
+#Load R script into the environment
+source(file = "functionEnrichment.R") 
+
+#call function to run Enrichment
+functionEnrichment(dblist1, geneListFinal, outputFileName1)
+```
